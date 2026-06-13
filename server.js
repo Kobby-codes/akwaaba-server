@@ -1,17 +1,12 @@
 const express = require('express');
 const app = express();
-app.use(express.urlencoded({ extended: false })); // Twilio sends form data
+app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-// ── CONFIG (set these in Render environment variables) ──
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN  = process.env.TWILIO_AUTH_TOKEN;
-const CLAUDE_KEY         = process.env.CLAUDE_KEY;
+const GROQ_KEY = process.env.GROQ_KEY;
 
-// Simple in-memory conversation history per customer
 const conversations = {};
 
-// ── PRODUCTS ──
 const products = [
   { name: 'Ankara Summer Maxi Dress', price: 350, sizes: ['S','M','L','XL','XXL'] },
   { name: 'Floral Print A-Line Midi',  price: 280, sizes: ['XS','S','M','L','XL'] },
@@ -46,65 +41,52 @@ YOUR JOB:
 
 Keep every reply under 120 words.`;
 
-// ── RECEIVE MESSAGE FROM TWILIO ──
 app.post('/webhook', async (req, res) => {
-  const from    = req.body.From;   // customer WhatsApp number e.g. whatsapp:+233...
-  const message = req.body.Body;   // what they typed
+  const from    = req.body.From;
+  const message = req.body.Body;
 
   console.log(`Message from ${from}: ${message}`);
 
-  // Build conversation history (keep last 10 turns)
   if (!conversations[from]) conversations[from] = [];
   conversations[from].push({ role: 'user', content: message });
   if (conversations[from].length > 10) conversations[from].shift();
 
-  // Get Akua's reply from Claude
-  const reply = await askClaude(conversations[from]);
+  const reply = await askGroq(conversations[from]);
 
-  // Save reply to history
   conversations[from].push({ role: 'assistant', content: reply });
 
-  // Send reply back via Twilio (TwiML format)
   res.set('Content-Type', 'text/xml');
-  res.send(`
-    <Response>
-      <Message>${reply}</Message>
-    </Response>
-  `);
+  res.send(`<Response><Message>${reply}</Message></Response>`);
 });
 
-// ── CLAUDE API ──
-async function askClaude(history) {
+async function askGroq(history) {
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': CLAUDE_KEY,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${GROQ_KEY}`
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'llama3-8b-8192',
         max_tokens: 300,
-        system: SYSTEM_PROMPT,
-        messages: history
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          ...history
+        ]
       })
     });
 
     const data = await res.json();
-    return data.content?.[0]?.text || "Sorry, I'm having a little trouble right now. Please try again in a moment!";
+    return data.choices?.[0]?.message?.content || "Sorry, I'm having a little trouble right now. Please try again!";
   } catch (err) {
-    console.error('Claude error:', err.message);
+    console.error('Groq error:', err.message);
     return "Sorry, I'm having a little trouble right now. Please try again!";
   }
 }
 
-// ── HEALTH CHECK ──
 app.get('/', (req, res) => {
-  res.json({ 
-    status: '✅ AKWAABA AI is running!',
-    time: new Date().toISOString()
-  });
+  res.json({ status: '✅ AKWAABA AI is running!', time: new Date().toISOString() });
 });
 
 const PORT = process.env.PORT || 3000;
