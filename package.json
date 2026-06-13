@@ -1,0 +1,15 @@
+{
+  "name": "akwaaba-whatsapp-twilio",
+  "version": "1.0.0",
+  "description": "AKWAABA Boutique WhatsApp AI Server (Twilio)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
